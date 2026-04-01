@@ -347,12 +347,49 @@ function update($app, $global, $quiet = $false, $independent, $suggested, $use_c
     # If a junction was used during install, that will have been used
     # as the reference directory. Otherwise it will just be the version
     # directory.
-    $refdir = unlink_current $dir
+    # Handle both normal and reverse junction modes
+    $junctionMode = get_junction_mode $app $global
+    if ($junctionMode -eq 'reverse') {
+        # Reverse junction mode: version directory is a junction pointing to current
+        # Remove the version junction first, then rename current to version directory
+        $appdir = appdir $app $global
+        $currentdir = "$appdir\current"
+        $versiondir = versiondir $app $old_version $global
+
+        if (Test-Path $versiondir) {
+            Write-Host "Unlinking $(friendly_path $versiondir)"
+            attrib $versiondir -R /L
+            Remove-Item $versiondir -Recurse -Force -ErrorAction Stop
+        }
+
+        # Rename current directory to version directory for backup/removal
+        if (Test-Path $currentdir) {
+            if ($force -and ($old_version -eq $version)) {
+                # Force update: backup the old version
+                if (!(Test-Path "$versiondir.old")) {
+                    Move-Item $currentdir "$versiondir.old"
+                } else {
+                    $i = 1
+                    While (Test-Path "$versiondir.old($i)") {
+                        $i++
+                    }
+                    Move-Item $currentdir "$versiondir.old($i)"
+                }
+            } else {
+                # Normal update: just rename current to version directory, will be removed below
+                Move-Item $currentdir $versiondir
+            }
+        }
+        $refdir = $versiondir
+    } else {
+        # Normal mode: current is a junction pointing to version directory
+        $refdir = unlink_current $dir
+    }
     uninstall_psmodule $old_manifest $refdir $global
     env_rm_path $old_manifest $refdir $global $architecture
     env_rm $old_manifest $global $architecture
 
-    if ($force -and ($old_version -eq $version)) {
+    if ($junctionMode -ne 'reverse' -and $force -and ($old_version -eq $version)) {
         if (!(Test-Path "$dir/../_$version.old")) {
             Move-Item "$dir" "$dir/../_$version.old"
         } else {

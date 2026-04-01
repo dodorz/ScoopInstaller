@@ -64,8 +64,18 @@ $apps | ForEach-Object {
 
     write-host "Resetting $app ($version)."
 
-    $dir = Convert-Path (versiondir $app $version $global)
-    $original_dir = $dir
+    # Detect junction mode to handle both normal and reverse modes
+    $junctionMode = get_junction_mode $app $global
+    if ($junctionMode -eq 'reverse') {
+        # Reverse junction mode: software is in current directory, version is a junction
+        $appdir = appdir $app $global
+        $dir = "$appdir\current"
+        $original_dir = versiondir $app $version $global
+    } else {
+        # Normal mode: software is in version directory, current is a junction
+        $dir = Convert-Path (versiondir $app $version $global)
+        $original_dir = $dir
+    }
     $persist_dir = persistdir $app $global
 
     #region Workaround for #2952
@@ -77,7 +87,7 @@ $apps | ForEach-Object {
     $install = install_info $app $version $global
     $architecture = $install.architecture
 
-    $dir = link_current $dir
+    $dir = link_current $original_dir
     create_shims $manifest $dir $global $architecture
     create_startmenu_shortcuts $manifest $dir $global $architecture
     # unset all potential old env before re-adding
@@ -86,8 +96,13 @@ $apps | ForEach-Object {
     env_add_path $manifest $dir $global $architecture
     env_set $manifest $global $architecture
     # unlink all potential old link before re-persisting
-    unlink_persist_data $manifest $original_dir
-    persist_data $manifest $original_dir $persist_dir
+    if ($junctionMode -eq 'reverse') {
+        unlink_persist_data $manifest $dir
+        persist_data $manifest $dir $persist_dir
+    } else {
+        unlink_persist_data $manifest $original_dir
+        persist_data $manifest $original_dir $persist_dir
+    }
     persist_permission $manifest $global
 }
 

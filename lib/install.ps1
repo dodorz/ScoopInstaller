@@ -45,9 +45,18 @@ function install_app($app, $architecture, $global, $suggested, $use_cache = $tru
     }
     Write-Output "Installing '$app' ($version) [$architecture]$(if ($bucket) { " from '$bucket' bucket" } else { " from '$url'" })"
 
-    $dir = ensure (versiondir $app $version $global)
-    $original_dir = $dir # keep reference to real (not linked) directory
-    $persist_dir = persistdir $app $global
+    if (get_config REVERSE_JUNCTION) {
+        # Reverse junction mode: install directly to current directory
+        $appdir = appdir $app $global
+        $dir = ensure "$appdir\current"
+        $original_dir = versiondir $app $version $global # version directory for persist reference
+        $persist_dir = persistdir $app $global
+    } else {
+        # Normal mode: install to version directory
+        $dir = ensure (versiondir $app $version $global)
+        $original_dir = $dir # keep reference to real (not linked) directory
+        $persist_dir = persistdir $app $global
+    }
 
     $fname = Invoke-ScoopDownload $app $version $manifest $bucket $architecture $dir $use_cache $check_hash
     Invoke-Extraction -Path $dir -Name $fname -Manifest $manifest -ProcessorArchitecture $architecture
@@ -63,7 +72,12 @@ function install_app($app, $architecture, $global, $suggested, $use_cache = $tru
     env_set $manifest $global $architecture
 
     # persist data
-    persist_data $manifest $original_dir $persist_dir
+    if (get_config REVERSE_JUNCTION) {
+        # In reverse mode, persist data should be linked in current directory
+        persist_data $manifest $dir $persist_dir
+    } else {
+        persist_data $manifest $original_dir $persist_dir
+    }
     persist_permission $manifest $global
 
     Invoke-HookScript -HookType 'post_install' -Manifest $manifest -ProcessorArchitecture $architecture
@@ -236,25 +250,47 @@ function rm_shims($app, $manifest, $global, $arch) {
 # Returns the 'current' junction directory if in use, otherwise
 # the version directory.
 function link_current($versiondir) {
-    if (get_config NO_JUNCTION) { return $versiondir.ToString() }
+    if (get_config NO_JUNCTION -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
 
-    $currentdir = "$(Split-Path $versiondir)\current"
+    $appdir = Split-Path $versiondir
+    $currentdir = "$appdir\current"
+    $version = Split-Path $versiondir -Leaf
 
-    Write-Host "Linking $(friendly_path $currentdir) => $(friendly_path $versiondir)"
+    if (get_config REVERSE_JUNCTION) {
+        # Reverse junction mode: version junction points to current directory
+        Write-Host "Linking $(friendly_path $versiondir) => $(friendly_path $currentdir)"
 
-    if ($currentdir -eq $versiondir) {
-        abort "Error: Version 'current' is not allowed!"
+        if ($version -eq 'current') {
+            abort "Error: Version 'current' is not allowed in reverse junction mode!"
+        }
+
+        # Remove existing version junction if exists
+        if (Test-Path $versiondir) {
+            attrib -R /L $versiondir
+            Remove-Item $versiondir -Recurse -Force -ErrorAction Stop
+        }
+
+        New-DirectoryJunction $versiondir $currentdir | Out-Null
+        attrib $versiondir +R /L
+        return $currentdir
+    } else {
+        # Normal mode: current junction points to version directory
+        Write-Host "Linking $(friendly_path $currentdir) => $(friendly_path $versiondir)"
+
+        if ($currentdir -eq $versiondir) {
+            abort "Error: Version 'current' is not allowed!"
+        }
+
+        if (Test-Path $currentdir) {
+            # remove the junction
+            attrib -R /L $currentdir
+            Remove-Item $currentdir -Recurse -Force -ErrorAction Stop
+        }
+
+        New-DirectoryJunction $currentdir $versiondir | Out-Null
+        attrib $currentdir +R /L
+        return $currentdir
     }
-
-    if (Test-Path $currentdir) {
-        # remove the junction
-        attrib -R /L $currentdir
-        Remove-Item $currentdir -Recurse -Force -ErrorAction Stop
-    }
-
-    New-DirectoryJunction $currentdir $versiondir | Out-Null
-    attrib $currentdir +R /L
-    return $currentdir
 }
 
 # Removes the directory junction for [app]/current which
@@ -263,20 +299,83 @@ function link_current($versiondir) {
 # Returns the 'current' junction directory (if it exists),
 # otherwise the normal version directory.
 function unlink_current($versiondir) {
-    if (get_config NO_JUNCTION) { return $versiondir.ToString() }
-    $currentdir = "$(Split-Path $versiondir)\current"
+    if (get_config NO_JUNCTION -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
 
-    if (Test-Path $currentdir) {
-        Write-Host "Unlinking $(friendly_path $currentdir)"
+    $appdir = Split-Path $versiondir
+    $currentdir = "$appdir\current"
+    $version = Split-Path $versiondir -Leaf
 
-        # remove read-only attribute on link
-        attrib $currentdir -R /L
+    if (get_config REVERSE_JUNCTION) {
+        # Reverse junction mode: remove version junction that points to current
+        if (Test-Path $versiondir) {
+            Write-Host "Unlinking $(friendly_path $versiondir)"
 
-        # remove the junction
-        Remove-Item $currentdir -Recurse -Force -ErrorAction Stop
+            # remove read-only attribute on link
+            attrib $versiondir -R /L
+
+            # remove the junction
+            Remove-Item $versiondir -Recurse -Force -ErrorAction Stop
+        }
         return $currentdir
+    } else {
+        # Normal mode: remove current junction
+        if (Test-Path $currentdir) {
+            Write-Host "Unlinking $(friendly_path $currentdir)"
+
+            # remove read-only attribute on link
+            attrib $currentdir -R /L
+
+            # remove the junction
+            Remove-Item $currentdir -Recurse -Force -ErrorAction Stop
+            return $currentdir
+        }
+        return $versiondir
     }
-    return $versiondir
+}
+
+# Detects the junction mode of an installed app
+# Returns 'reverse' if version junction points to current, 'normal' if current junction points to version, 'none' if no junction
+function get_junction_mode($app, $global) {
+    $appdir = appdir $app $global
+    $currentdir = "$appdir\current"
+
+    if (!(Test-Path $currentdir)) {
+        return 'none'
+    }
+
+    # Check if current is a directory (not a junction)
+    $item = Get-Item $currentdir -ErrorAction SilentlyContinue
+    if ($item -and $item.Attributes -notmatch 'ReparsePoint') {
+        # current is a real directory, check if any version junction points to it
+        $versions = Get-ChildItem $appdir -Directory -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -ne 'current' -and $_.Attributes -match 'ReparsePoint'
+        }
+        foreach ($ver in $versions) {
+            $target = [System.IO.Directory]::GetParent($ver.FullName).GetFileSystemInfos($ver.Name)[0]
+            if ($target -is [System.IO.DirectoryInfo]) {
+                $junctionTarget = $target.FullName
+                # Try to get junction target
+                try {
+                    $junctionTarget = (Get-Item $ver.FullName).Target
+                    if ($junctionTarget -eq $currentdir) {
+                        return 'reverse'
+                    }
+                } catch {}
+            }
+        }
+    }
+
+    # Check if current is a junction pointing to a version directory
+    if ($item -and $item.Attributes -match 'ReparsePoint') {
+        try {
+            $target = (Get-Item $currentdir).Target
+            if ($target -and (Split-Path $target -Leaf) -ne 'current') {
+                return 'normal'
+            }
+        } catch {}
+    }
+
+    return 'none'
 }
 
 # to undo after installers add to path so that scoop manifest can keep track of this instead
