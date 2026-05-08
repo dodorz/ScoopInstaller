@@ -81,23 +81,54 @@ if (!$apps) { exit 0 }
         # If a junction was used during install, that will have been used
         # as the reference directory. Otherwise it will just be the version
         # directory.
-        $refdir = unlink_current $dir
+        # Handle both normal and reverse junction modes
+        $junctionMode = get_junction_mode $app $global
+        if ($junctionMode -eq 'reverse') {
+            # Reverse junction mode: version directory is a junction pointing to current
+            $appdir = appdir $app $global
+            $currentdir = "$appdir\current"
+            $versiondir = versiondir $app $version $global
+
+            # Remove version junction first
+            if (Test-Path $versiondir) {
+                Write-Host "Unlinking $(friendly_path $versiondir)"
+                attrib $versiondir -R /L
+                Remove-Item $versiondir -Recurse -Force -ErrorAction Stop
+            }
+
+            # Remove current directory
+            if (Test-Path $currentdir) {
+                try {
+                    unlink_persist_data $manifest $currentdir
+                    Remove-Item $currentdir -Recurse -Force -ErrorAction Stop
+                } catch {
+                    if (Test-Path $currentdir) {
+                        error "Couldn't remove '$(friendly_path $currentdir)'; it may be in use."
+                        continue
+                    }
+                }
+            }
+            $refdir = $versiondir
+        } else {
+            # Normal mode: current is a junction pointing to version directory
+            $refdir = unlink_current $dir
+
+            try {
+                # unlink all potential old link before doing recursive Remove-Item
+                unlink_persist_data $manifest $dir
+                Remove-Item $dir -Recurse -Force -ErrorAction Stop
+            } catch {
+                if (Test-Path $dir) {
+                    error "Couldn't remove '$(friendly_path $dir)'; it may be in use."
+                    continue
+                }
+            }
+        }
 
         uninstall_psmodule $manifest $refdir $global
 
         env_rm_path $manifest $refdir $global $architecture
         env_rm $manifest $global $architecture
-
-        try {
-            # unlink all potential old link before doing recursive Remove-Item
-            unlink_persist_data $manifest $dir
-            Remove-Item $dir -Recurse -Force -ErrorAction Stop
-        } catch {
-            if (Test-Path $dir) {
-                error "Couldn't remove '$(friendly_path $dir)'; it may be in use."
-                continue
-            }
-        }
 
         Invoke-HookScript -HookType 'post_uninstall' -Manifest $manifest -Arch $architecture
     }
@@ -115,9 +146,14 @@ if (!$apps) { exit 0 }
             continue app_loop
         }
     }
+    # Clean up current directory if it still exists (e.g., in normal mode or failed reverse mode)
     if (Test-Path ($currentDir = Join-Path $appDir 'current')) {
-        attrib $currentDir -R /L
-        Remove-Item $currentDir -ErrorAction Stop -Force
+        $item = Get-Item $currentDir -ErrorAction SilentlyContinue
+        # Only remove if it's a junction (not a real directory, which would be the case in reverse mode)
+        if ($item -and $item.Attributes -match 'ReparsePoint') {
+            attrib $currentDir -R /L
+            Remove-Item $currentDir -ErrorAction Stop -Force
+        }
     }
     if (!(Get-ChildItem $appDir)) {
         try {
