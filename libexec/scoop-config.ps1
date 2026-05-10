@@ -33,6 +33,9 @@
 # no_junction: $true|$false
 #       The 'current' version alias will not be used. Shims and shortcuts will point to specific version instead.
 #
+# reverse_junction: $true|$false
+#       Install files into the 'current' directory and create a version junction pointing to it.
+#
 # scoop_repo: https://github.com/dodorz/ScoopInstaller
 #       Git repository containining scoop source code.
 #       This configuration is useful for custom forks.
