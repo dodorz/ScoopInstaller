@@ -111,6 +111,31 @@ Describe 'link_current' -Tag 'Scoop', 'Windows' {
     }
 }
 
+Describe 'reverse layout metadata' -Tag 'Scoop', 'Windows' {
+    BeforeEach {
+        $script:old_scoopdir = $scoopdir
+        $scoopdir = $TestDrive
+    }
+
+    AfterEach {
+        $scoopdir = $script:old_scoopdir
+    }
+
+    It 'falls back to current when version directory is missing' {
+        $app = 'testapp'
+        $appdir = Join-Path $TestDrive "apps\$app"
+        $currentdir = Join-Path $appdir 'current'
+        ensure $currentdir | Out-Null
+
+        [IO.File]::WriteAllText((Join-Path $currentdir 'manifest.json'), '{ "version": "1.2.3" }')
+        [IO.File]::WriteAllText((Join-Path $currentdir 'install.json'), '{ "architecture": "64bit" }')
+
+        (installed_manifest $app '1.2.3' $false).version | Should -Be '1.2.3'
+        (install_info $app '1.2.3' $false).architecture | Should -Be '64bit'
+        get_junction_mode $app $false | Should -Be 'reverse'
+    }
+}
+
 Describe 'persist_def' -Tag 'Scoop' {
     It 'parses string correctly' {
         $source, $target = persist_def 'test'

@@ -380,7 +380,7 @@ function update($app, $global, $quiet = $false, $independent, $suggested, $use_c
                 Move-Item $currentdir $versiondir
             }
         }
-        $refdir = $versiondir
+        $refdir = $currentdir
     } else {
         # Normal mode: current is a junction pointing to version directory
         $refdir = unlink_current $dir $junctionMode

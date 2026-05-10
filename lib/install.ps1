@@ -368,6 +368,10 @@ function get_junction_mode($app, $global) {
                 } catch {}
             }
         }
+
+        if ((Test-Path "$currentdir\manifest.json") -and (Test-Path "$currentdir\install.json")) {
+            return 'reverse'
+        }
     }
 
     # Check if current is a junction pointing to a version directory

@@ -49,6 +49,7 @@ if (!$apps) { exit 0 }
 
     $version = Select-CurrentVersion -AppName $app -Global:$global
     $appDir = appdir $app $global
+    $currentdir = Join-Path $appDir 'current'
     if ($version) {
         Write-Host "Uninstalling '$app' ($version)."
 
@@ -85,8 +86,6 @@ if (!$apps) { exit 0 }
         $junctionMode = get_junction_mode $app $global
         if ($junctionMode -eq 'reverse') {
             # Reverse junction mode: version directory is a junction pointing to current
-            $appdir = appdir $app $global
-            $currentdir = "$appdir\current"
             $versiondir = versiondir $app $version $global
 
             # Remove version junction first
@@ -108,7 +107,7 @@ if (!$apps) { exit 0 }
                     }
                 }
             }
-            $refdir = $versiondir
+            $refdir = $currentdir
         } else {
             # Normal mode: current is a junction pointing to version directory
             $refdir = unlink_current $dir

@@ -128,7 +128,11 @@ function save_installed_manifest($app, $bucket, $dir, $url) {
 }
 
 function installed_manifest($app, $version, $global) {
-    parse_json "$(versiondir $app $version $global)\manifest.json"
+    $path = "$(versiondir $app $version $global)\manifest.json"
+    if (!(Test-Path $path)) {
+        $path = "$(currentdir $app $global)\manifest.json"
+    }
+    parse_json $path
 }
 
 function save_install_info($info, $dir) {
@@ -141,6 +145,9 @@ function save_install_info($info, $dir) {
 
 function install_info($app, $version, $global) {
     $path = "$(versiondir $app $version $global)\install.json"
+    if (!(Test-Path $path)) {
+        $path = "$(currentdir $app $global)\install.json"
+    }
     if (!(Test-Path $path)) { return $null }
     parse_json $path
 }
