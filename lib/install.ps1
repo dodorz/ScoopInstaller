@@ -64,7 +64,7 @@ function install_app($app, $architecture, $global, $suggested, $use_cache = $tru
 
     Invoke-Installer -Path $dir -Name $fname -Manifest $manifest -ProcessorArchitecture $architecture -AppName $app -Global:$global
     ensure_install_dir_not_in_path $dir $global
-    $dir = link_current $dir
+    $dir = link_current $original_dir
     create_shims $manifest $dir $global $architecture
     create_startmenu_shortcuts $manifest $dir $global $architecture
     install_psmodule $manifest $dir $global
@@ -298,14 +298,19 @@ function link_current($versiondir) {
 #
 # Returns the 'current' junction directory (if it exists),
 # otherwise the normal version directory.
-function unlink_current($versiondir) {
-    if (get_config NO_JUNCTION -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
+function unlink_current($versiondir, $junctionMode = $null) {
+    if (!$junctionMode) {
+        if (get_config NO_JUNCTION -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
+        $junctionMode = if (get_config REVERSE_JUNCTION) { 'reverse' } else { 'normal' }
+    } elseif ($junctionMode -eq 'none') {
+        return $versiondir.ToString()
+    }
 
     $appdir = Split-Path $versiondir
     $currentdir = "$appdir\current"
     $version = Split-Path $versiondir -Leaf
 
-    if (get_config REVERSE_JUNCTION) {
+    if ($junctionMode -eq 'reverse') {
         # Reverse junction mode: remove version junction that points to current
         if (Test-Path $versiondir) {
             Write-Host "Unlinking $(friendly_path $versiondir)"

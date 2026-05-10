@@ -383,7 +383,7 @@ function update($app, $global, $quiet = $false, $independent, $suggested, $use_c
         $refdir = $versiondir
     } else {
         # Normal mode: current is a junction pointing to version directory
-        $refdir = unlink_current $dir
+        $refdir = unlink_current $dir $junctionMode
     }
     uninstall_psmodule $old_manifest $refdir $global
     env_rm_path $old_manifest $refdir $global $architecture

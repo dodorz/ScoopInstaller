@@ -70,6 +70,47 @@ Describe 'shim_def' -Tag 'Scoop' {
     }
 }
 
+Describe 'unlink_current' -Tag 'Scoop', 'Windows' {
+    It 'can unlink a normal current junction while reverse junction is configured' {
+        Mock get_config {
+            if ($name -eq 'REVERSE_JUNCTION') { return $true }
+            return $false
+        }
+
+        $appdir = Join-Path $TestDrive 'apps\testapp'
+        $versiondir = Join-Path $appdir '1.0.0'
+        $currentdir = Join-Path $appdir 'current'
+        ensure $versiondir | Out-Null
+        New-DirectoryJunction $currentdir $versiondir | Out-Null
+
+        unlink_current $versiondir 'normal' | Should -Be $currentdir
+
+        Test-Path $currentdir | Should -BeFalse
+        Test-Path $versiondir | Should -BeTrue
+    }
+}
+
+Describe 'link_current' -Tag 'Scoop', 'Windows' {
+    It 'creates a version junction to current in reverse mode' {
+        Mock get_config {
+            if ($name -eq 'REVERSE_JUNCTION') { return $true }
+            return $false
+        }
+
+        $appdir = Join-Path $TestDrive 'apps\testapp'
+        $versiondir = Join-Path $appdir '1.0.0'
+        $currentdir = Join-Path $appdir 'current'
+        ensure $currentdir | Out-Null
+
+        link_current $versiondir | Should -Be $currentdir
+
+        (Get-Item $versiondir).Target | Should -Be $currentdir
+        Test-Path $currentdir | Should -BeTrue
+
+        attrib $versiondir -R /L
+    }
+}
+
 Describe 'persist_def' -Tag 'Scoop' {
     It 'parses string correctly' {
         $source, $target = persist_def 'test'
