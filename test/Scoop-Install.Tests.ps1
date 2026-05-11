@@ -109,6 +109,24 @@ Describe 'link_current' -Tag 'Scoop', 'Windows' {
 
         attrib $versiondir -R /L
     }
+
+    It 'does not treat an unset no_junction as enabled' {
+        Mock get_config {
+            if ($name -eq 'REVERSE_JUNCTION') { return $true }
+            return $default
+        }
+
+        $appdir = Join-Path $TestDrive 'apps\unset-no-junction'
+        $versiondir = Join-Path $appdir '1.0.0'
+        $currentdir = Join-Path $appdir 'current'
+        ensure $currentdir | Out-Null
+
+        link_current $versiondir | Should -Be $currentdir
+
+        (Get-Item $versiondir).Target | Should -Be $currentdir
+
+        attrib $versiondir -R /L
+    }
 }
 
 Describe 'reverse layout metadata' -Tag 'Scoop', 'Windows' {

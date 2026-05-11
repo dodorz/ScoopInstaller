@@ -148,10 +148,11 @@ if (!$apps) { exit 0 }
     # Clean up current directory if it still exists (e.g., in normal mode or failed reverse mode)
     if (Test-Path ($currentDir = Join-Path $appDir 'current')) {
         $item = Get-Item $currentDir -ErrorAction SilentlyContinue
-        # Only remove if it's a junction (not a real directory, which would be the case in reverse mode)
         if ($item -and $item.Attributes -match 'ReparsePoint') {
             attrib $currentDir -R /L
             Remove-Item $currentDir -ErrorAction Stop -Force
+        } elseif (!$version) {
+            Remove-Item $currentDir -Recurse -Force -ErrorAction Stop
         }
     }
     if (!(Get-ChildItem $appDir)) {

@@ -250,7 +250,7 @@ function rm_shims($app, $manifest, $global, $arch) {
 # Returns the 'current' junction directory if in use, otherwise
 # the version directory.
 function link_current($versiondir) {
-    if (get_config NO_JUNCTION -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
+    if ((get_config NO_JUNCTION) -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
 
     $appdir = Split-Path $versiondir
     $currentdir = "$appdir\current"
@@ -300,7 +300,7 @@ function link_current($versiondir) {
 # otherwise the normal version directory.
 function unlink_current($versiondir, $junctionMode = $null) {
     if (!$junctionMode) {
-        if (get_config NO_JUNCTION -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
+        if ((get_config NO_JUNCTION) -and !(get_config REVERSE_JUNCTION)) { return $versiondir.ToString() }
         $junctionMode = if (get_config REVERSE_JUNCTION) { 'reverse' } else { 'normal' }
     } elseif ($junctionMode -eq 'none') {
         return $versiondir.ToString()
