@@ -53,7 +53,12 @@ function Select-CurrentVersion { # 'manifest.ps1'
         if (!(get_config NO_JUNCTION)) {
             $currentVersion = (parse_json "$currentPath\manifest.json").version
             if ($currentVersion -eq 'nightly') {
-                $currentVersion = (Get-Item $currentPath).Target | Split-Path -Leaf
+                $currentTarget = (Get-Item $currentPath).Target
+                if ($currentTarget) {
+                    $currentVersion = $currentTarget | Split-Path -Leaf
+                } else {
+                    $currentVersion = @(Get-InstalledVersion -AppName $AppName -Global:$Global | Where-Object { $_ -like 'nightly-*' })[-1]
+                }
             }
         }
         if ($null -eq $currentVersion) {

@@ -1,6 +1,34 @@
 BeforeAll {
     . "$PSScriptRoot\Scoop-TestLib.ps1"
+    . "$PSScriptRoot\..\lib\core.ps1"
+    . "$PSScriptRoot\..\lib\json.ps1"
+    . "$PSScriptRoot\..\lib\manifest.ps1"
     . "$PSScriptRoot\..\lib\versions.ps1"
+}
+
+Describe 'Select-CurrentVersion' -Tag 'Scoop', 'Windows' {
+    BeforeEach {
+        $script:old_scoopdir = $scoopdir
+        $scoopdir = $TestDrive
+    }
+
+    AfterEach {
+        $scoopdir = $script:old_scoopdir
+    }
+
+    It 'uses installed nightly version when current is a real directory' {
+        function get_config { $null }
+
+        $appdir = Join-Path $TestDrive 'apps\nightly-app'
+        $currentdir = Join-Path $appdir 'current'
+        $versiondir = Join-Path $appdir 'nightly-20260511'
+        ensure $currentdir | Out-Null
+        ensure $versiondir | Out-Null
+        [IO.File]::WriteAllText((Join-Path $currentdir 'manifest.json'), '{ "version": "nightly" }')
+        [IO.File]::WriteAllText((Join-Path $versiondir 'install.json'), '{ "architecture": "64bit" }')
+
+        Select-CurrentVersion -AppName 'nightly-app' | Should -Be 'nightly-20260511'
+    }
 }
 
 Describe 'versions comparison' -Tag 'Scoop' {
